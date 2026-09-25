@@ -1,11 +1,14 @@
-name: Build standalone Android APK
+name: Build and test standalone Android APK
 on:
   workflow_dispatch:
   push:
     branches: [main]
+    paths:
+      - .github/workflows/android-release.yml
+      - smart-study-assistant-android-qa-v2.2-source.zip
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       EXPO_PUBLIC_API_BASE_URL: https://smart-study-assistant-g7vi.onrender.com
     steps:
@@ -28,17 +31,50 @@ jobs:
       - name: Install dependencies
         working-directory: unpacked/smart-study-assistant
         run: rm pnpm-workspace.yaml && pnpm install --frozen-lockfile
+      - name: Add emulator CPU to test build
+        working-directory: unpacked/smart-study-assistant
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('app.config.ts')
+          source = path.read_text()
+          needle = 'buildArchs: ["armeabi-v7a", "arm64-v8a"]'
+          assert needle in source
+          path.write_text(source.replace(needle, 'buildArchs: ["armeabi-v7a", "arm64-v8a", "x86_64"]'))
+          PY
       - name: Generate Android project
         working-directory: unpacked/smart-study-assistant
         run: pnpm exec expo prebuild --platform android --no-install
       - name: Build standalone release APK
         working-directory: unpacked/smart-study-assistant/android
         run: ./gradlew assembleRelease --no-daemon
-      - name: Confirm JavaScript is inside the APK
+      - name: Confirm JavaScript and native libraries
         working-directory: unpacked/smart-study-assistant/android
-        run: unzip -l app/build/outputs/apk/release/app-release.apk | grep -q 'assets/index.android.bundle'
+        run: |
+          unzip -l app/build/outputs/apk/release/app-release.apk | grep -q 'assets/index.android.bundle'
+          unzip -l app/build/outputs/apk/release/app-release.apk | grep -q 'lib/x86_64/libreactnative.so'
       - uses: actions/upload-artifact@v4
         with:
           name: smart-study-assistant-android-release-apk
           path: unpacked/smart-study-assistant/android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install and launch release APK
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          disable-linux-hw-accel: false
+          disable-animations: true
+          script: |
+            adb install unpacked/smart-study-assistant/android/app/build/outputs/apk/release/app-release.apk
+            adb logcat -c
+            adb shell am start -n com.mohamedadel.smartstudyassistant/.MainActivity
+            sleep 20
+            adb logcat -d -v brief | grep -E 'FATAL EXCEPTION|AndroidRuntime|ReactNativeJS|UnsatisfiedLinkError|Unable to start activity' | tail -100 || true
+            adb shell pidof com.mohamedadel.smartstudyassistant
