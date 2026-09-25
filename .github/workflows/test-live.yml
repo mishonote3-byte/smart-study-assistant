@@ -1,0 +1,71 @@
+name: Test live study API
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [.github/workflows/test-live.yml]
+permissions:
+  contents: read
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install reportlab
+      - name: Upload a PDF and generate an exam
+        env:
+          API_BASE: https://smart-study-assistant-g7vi.onrender.com
+        run: |
+          python - <<'PY'
+          import io, json, os, urllib.request
+          from reportlab.pdfgen import canvas
+          lines = [
+              "Photosynthesis converts sunlight into chemical energy in plants.",
+              "Chlorophyll is the green pigment that absorbs sunlight.",
+              "Leaves exchange carbon dioxide and oxygen through stomata.",
+              "Roots absorb water and minerals from the soil.",
+              "The xylem transports water from roots toward leaves.",
+              "The phloem transports sugars from leaves to other tissues.",
+              "Cellular respiration releases energy stored in glucose.",
+              "Mitochondria produce ATP during cellular respiration.",
+              "Evaporation of water from leaves is called transpiration.",
+              "A seed contains an embryo and a supply of nutrients.",
+              "Pollination moves pollen from anther to stigma.",
+              "Germination requires water, oxygen, and suitable temperature.",
+          ]
+          stream = io.BytesIO()
+          document = canvas.Canvas(stream)
+          for index, line in enumerate(lines):
+              document.drawString(45, 770 - index * 25, line)
+          document.save()
+          pdf = stream.getvalue()
+          def post(path, body, headers):
+              request = urllib.request.Request(os.environ["API_BASE"] + path, data=body, headers=headers, method="POST")
+              with urllib.request.urlopen(request, timeout=180) as response:
+                  assert response.status == 200, response.status
+                  return json.load(response)
+          processed = post("/api/document/upload", pdf, {
+              "Content-Type": "application/pdf",
+              "x-file-name": "live-test.pdf",
+              "x-mime-type": "application/pdf",
+          })
+          text = processed["text"]
+          assert "Photosynthesis" in text and "Pollination" in text, text[:500]
+          payload = {"json": {
+              "text": text,
+              "documentId": "live-ci-sample",
+              "questionCount": 8,
+              "typeCounts": {"mcq": 5, "truefalse": 3},
+          }}
+          output = post("/api/trpc/study.generateQuestions", json.dumps(payload).encode(), {
+              "Content-Type": "application/json"
+          })
+          questions = output["result"]["data"]["json"]
+          counts = {kind: sum(q["type"] == kind for q in questions) for kind in ("mcq", "truefalse")}
+          assert len(questions) >= 5, (len(questions), counts)
+          assert counts["mcq"] > 0 and counts["truefalse"] > 0, counts
+          assert all(q.get("answer") for q in questions)
+          print(json.dumps({"pdf_bytes": len(pdf), "extracted_chars": len(text), "questions": len(questions), "types": counts}))
+          PY
