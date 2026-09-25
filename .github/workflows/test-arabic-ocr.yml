@@ -1,0 +1,63 @@
+name: Test Arabic scanned image
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [.github/workflows/test-arabic-ocr.yml]
+permissions:
+  contents: read
+jobs:
+  ocr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pillow
+      - name: Upload an Arabic scan and generate questions
+        env:
+          API_BASE: https://smart-study-assistant-g7vi.onrender.com
+        run: |
+          python - <<'PY'
+          import io, json, os, urllib.request
+          from PIL import Image, ImageDraw, ImageFont
+
+          lines = [
+              "التعليم أساس بناء الأمم والمذاكرة تساعد الطالب على النجاح.",
+              "القراءة توسع المعرفة والفهم أهم من الحفظ في الدراسة.",
+              "المعلم يشرح الدرس والطالب يجيب عن الأسئلة في الامتحان.",
+              "التعلم المستمر يساعد الإنسان على تطوير مهاراته.",
+          ]
+          image = Image.new("RGB", (1650, 550), "white")
+          draw = ImageDraw.Draw(image)
+          font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 48)
+          for index, line in enumerate(lines):
+              draw.text((1600, 30 + index * 115), line, font=font, fill="black", anchor="ra", direction="rtl")
+          stream = io.BytesIO()
+          image.save(stream, format="PNG")
+          body = stream.getvalue()
+          def post(path, data, headers):
+              req = urllib.request.Request(os.environ["API_BASE"] + path, data=data, headers=headers, method="POST")
+              with urllib.request.urlopen(req, timeout=180) as response:
+                  return json.load(response)
+          processed = post("/api/document/upload", body, {
+              "Content-Type": "image/png",
+              "x-file-name": "arabic-scan.png",
+              "x-mime-type": "image/png",
+          })
+          text = processed["text"]
+          arabic_chars = sum("\u0600" <= ch <= "\u06ff" for ch in text)
+          print(json.dumps({"image_bytes": len(body), "extracted_chars": len(text), "arabic_chars": arabic_chars}, ensure_ascii=False))
+          assert arabic_chars >= 50, text
+          output = post("/api/trpc/study.generateQuestions", json.dumps({"json": {
+              "text": text,
+              "documentId": "arabic-ocr-check",
+              "questionCount": 6,
+              "typeCounts": {"mcq": 4, "truefalse": 2}
+          }}).encode(), {"Content-Type": "application/json"})
+          questions = output["result"]["data"]["json"]
+          assert len(questions) >= 3, len(questions)
+          assert any(q["type"] == "mcq" for q in questions)
+          assert any(q["type"] == "truefalse" for q in questions)
+          print(json.dumps({"questions": len(questions), "types": [q["type"] for q in questions]}))
+          PY
