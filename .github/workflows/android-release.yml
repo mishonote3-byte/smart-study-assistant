@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build standalone Android APK
 on:
   workflow_dispatch:
   push:
@@ -31,11 +31,14 @@ jobs:
       - name: Generate Android project
         working-directory: unpacked/smart-study-assistant
         run: pnpm exec expo prebuild --platform android --no-install
-      - name: Build installable APK
+      - name: Build standalone release APK
         working-directory: unpacked/smart-study-assistant/android
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleRelease --no-daemon
+      - name: Confirm JavaScript is inside the APK
+        working-directory: unpacked/smart-study-assistant/android
+        run: unzip -l app/build/outputs/apk/release/app-release.apk | grep -q 'assets/index.android.bundle'
       - uses: actions/upload-artifact@v4
         with:
-          name: smart-study-assistant-android-apk
-          path: unpacked/smart-study-assistant/android/app/build/outputs/apk/debug/*.apk
+          name: smart-study-assistant-android-release-apk
+          path: unpacked/smart-study-assistant/android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
