@@ -1,4 +1,4 @@
-name: Smoke test Android APK
+name: Smoke test Android home screen
 on:
   push:
     paths:
@@ -14,13 +14,13 @@ jobs:
     steps:
       - name: Enable emulator acceleration
         run: |
-          echo "KERNEL==\"kvm\", GROUP=\"kvm\", MODE=\"0666\", OPTIONS+=\"static_node=kvm\"" | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - uses: actions/download-artifact@v4
         with:
           name: smart-study-assistant-android-release-apk
-          run-id: 36136609362
+          run-id: 36141838827
           github-token: ${{ github.token }}
           path: apk
       - uses: reactivecircus/android-emulator-runner@v2
@@ -34,6 +34,14 @@ jobs:
             adb install apk/app-release.apk
             adb logcat -c
             adb shell am start -n com.mohamedadel.smartstudyassistant/.MainActivity
-            sleep 15
-            adb logcat -d -v brief | grep -E "FATAL EXCEPTION|AndroidRuntime|ReactNativeJS|UnsatisfiedLinkError|SoLoader|Unable to start activity|libc.*Fatal" | tail -100 || true
+            sleep 25
+            adb exec-out screencap -p > android-home.png
+            adb shell uiautomator dump /sdcard/window.xml >/dev/null
+            adb shell cat /sdcard/window.xml | grep 'مساعد الدراسة الذكي'
             adb shell pidof com.mohamedadel.smartstudyassistant
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-home-screen
+          path: android-home.png
+          if-no-files-found: warn
