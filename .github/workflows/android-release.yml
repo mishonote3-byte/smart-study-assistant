@@ -6,6 +6,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      EXPO_PUBLIC_API_BASE_URL: https://smart-study-assistant-g7vi.onrender.com
     steps:
       - uses: actions/checkout@v4
       - name: Unpack the source archive
@@ -28,8 +30,6 @@ jobs:
         run: rm pnpm-workspace.yaml && pnpm install --frozen-lockfile
       - name: Generate Android project
         working-directory: unpacked/smart-study-assistant
-        env:
-          EXPO_PUBLIC_API_BASE_URL: ${{ vars.EXPO_PUBLIC_API_BASE_URL }}
         run: pnpm exec expo prebuild --platform android --no-install
       - name: Build installable APK
         working-directory: unpacked/smart-study-assistant/android
