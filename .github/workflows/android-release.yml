@@ -1,0 +1,41 @@
+name: Build Android APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unpack the source archive
+        run: unzip -q smart-study-assistant-android-qa-v2.2-source.zip -d unpacked
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: unpacked/smart-study-assistant/pnpm-lock.yaml
+      - name: Install dependencies
+        working-directory: unpacked/smart-study-assistant
+        run: pnpm install --frozen-lockfile
+      - name: Generate Android project
+        working-directory: unpacked/smart-study-assistant
+        env:
+          EXPO_PUBLIC_API_BASE_URL: ${{ vars.EXPO_PUBLIC_API_BASE_URL }}
+        run: pnpm exec expo prebuild --platform android --no-install
+      - name: Build installable APK
+        working-directory: unpacked/smart-study-assistant/android
+        run: ./gradlew assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smart-study-assistant-android-apk
+          path: unpacked/smart-study-assistant/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
