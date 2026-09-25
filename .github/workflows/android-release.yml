@@ -25,7 +25,7 @@ jobs:
           cache-dependency-path: unpacked/smart-study-assistant/pnpm-lock.yaml
       - name: Install dependencies
         working-directory: unpacked/smart-study-assistant
-        run: pnpm install --frozen-lockfile
+        run: rm pnpm-workspace.yaml && pnpm install --frozen-lockfile
       - name: Generate Android project
         working-directory: unpacked/smart-study-assistant
         env:
