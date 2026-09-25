@@ -1,0 +1,36 @@
+name: Test study flow
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/test-study.yml'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unpack source
+        run: unzip -q smart-study-assistant-android-qa-v2.2-source.zip -d unpacked
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        working-directory: unpacked/smart-study-assistant
+        run: rm pnpm-workspace.yaml && pnpm install --frozen-lockfile
+      - name: Check TypeScript
+        working-directory: unpacked/smart-study-assistant
+        run: pnpm check
+      - name: Test PDF extraction and question generation
+        working-directory: unpacked/smart-study-assistant
+        run: |
+          pnpm test:smoke
+          pnpm exec tsx scripts/test-generate-questions.ts
+      - name: Test examination logic
+        working-directory: unpacked/smart-study-assistant
+        run: pnpm test
